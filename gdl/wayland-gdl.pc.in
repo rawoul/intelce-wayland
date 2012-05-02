@@ -1,0 +1,8 @@
+prefix=@prefix@
+libdir=@libdir@
+includedir=@includedir@
+Name: wayland-gdl
+Description: GDL buffer protocol for Wayland
+Version: @VERSION@
+Libs: -L@libdir@ -lwayland-gdl
+Cflags: -I@includedir@

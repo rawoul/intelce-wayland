@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<protocol name="gdl">
+
+  <interface name="wl_gdl" version="1">
+    <enum name="error">
+      <entry name="invalid_name" value="0"/>
+    </enum>
+
+    <request name="create_buffer">
+      <arg name="id" type="new_id" interface="wl_buffer"/>
+      <arg name="name" type="uint"/>
+    </request>
+  </interface>
+
+</protocol>
