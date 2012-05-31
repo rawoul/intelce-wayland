@@ -358,8 +358,12 @@ WSEGL_CreatePixmapDrawable(WSEGLDisplayHandle display_handle,
 static void
 destroy_drawable_pixmap(struct wayland_drawable *drawable)
 {
-	wayland_unbind_buffer(drawable->display, drawable->pixmap.buffer);
-	drawable->pixmap.egl_pixmap->buffer = NULL;
+	struct wayland_pixmap *pixmap = &drawable->pixmap;
+
+	if (pixmap->egl_pixmap)
+		wayland_destroy_buffer(drawable->display, pixmap->buffer);
+	else
+		wayland_unbind_buffer(drawable->display, pixmap->buffer);
 }
 
 static void
