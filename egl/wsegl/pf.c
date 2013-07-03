@@ -16,10 +16,12 @@ static const struct wayland_pixel_format pixel_formats[] = {
 	PF(A8,            8,     1,  true,   false),
 };
 
+#define PF_COUNT (sizeof (pixel_formats) / sizeof (*pixel_formats))
+
 const struct wayland_pixel_format *
 convert_gdl_pixel_format(gdl_pixel_format_t pf)
 {
-	for (unsigned i = 0; i < ARRAY_LENGTH(pixel_formats); i++)
+	for (unsigned i = 0; i < PF_COUNT; i++)
 		if (pixel_formats[i].gdl_pf == pf)
 			return &pixel_formats[i];
 
@@ -29,7 +31,7 @@ convert_gdl_pixel_format(gdl_pixel_format_t pf)
 const struct wayland_pixel_format *
 convert_gma_pixel_format(gma_pixel_format_t pf)
 {
-	for (unsigned i = 0; i < ARRAY_LENGTH(pixel_formats); i++)
+	for (unsigned i = 0; i < PF_COUNT; i++)
 		if (pixel_formats[i].gma_pf == pf)
 			return &pixel_formats[i];
 
@@ -39,7 +41,7 @@ convert_gma_pixel_format(gma_pixel_format_t pf)
 const struct wayland_pixel_format *
 convert_wsegl_pixel_format(WSEGLPixelFormat pf)
 {
-	for (unsigned i = 0; i < ARRAY_LENGTH(pixel_formats); i++)
+	for (unsigned i = 0; i < PF_COUNT; i++)
 		if (pixel_formats[i].wsegl_pf == pf)
 			return &pixel_formats[i];
 
