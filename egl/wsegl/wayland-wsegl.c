@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
 
@@ -82,6 +83,9 @@ WSEGL_CloseDisplay(WSEGLDisplayHandle display_handle)
 	if (display->wl_gdl)
 		wl_gdl_destroy(display->wl_gdl);
 
+	if (display->wl_registry)
+		wl_registry_destroy(display->wl_registry);
+
 	if (display->pvr2d_context)
 		PVR2DDestroyDeviceContext(display->pvr2d_context);
 
@@ -93,6 +97,22 @@ WSEGL_CloseDisplay(WSEGLDisplayHandle display_handle)
 	return WSEGL_SUCCESS;
 }
 
+static void
+registry_handle_global(void *data, struct wl_registry *registry,
+		       uint32_t id, const char *interface, uint32_t version)
+{
+	struct wayland_display *display = data;
+
+	if (!strcmp(interface, "wl_gdl")) {
+		display->wl_gdl = wl_registry_bind(registry, id,
+						   &wl_gdl_interface, 1);
+	}
+}
+
+static const struct wl_registry_listener registry_listener = {
+	.global = registry_handle_global,
+};
+
 static WSEGLError
 WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 			WSEGLDisplayHandle *display_handle,
@@ -100,9 +120,7 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 			WSEGLConfig **configs)
 {
 	struct wayland_display *display;
-	gdl_ret_t gdl_rc;
 	PVR2DERROR pvr2d_rc;
-	uint32_t id;
 
 	dbg("initializing Wayland display");
 
@@ -111,19 +129,19 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 		return WSEGL_OUT_OF_MEMORY;
 
 	display->wl_display = (struct wl_display *) native_display;
+	display->wl_registry = wl_display_get_registry(display->wl_display);
+	wl_registry_add_listener(display->wl_registry,
+				 &registry_listener, display);
 
-	id = wl_display_get_global(display->wl_display, "wl_gdl", 1);
-	if (id == 0)
-		wl_display_roundtrip(display->wl_display);
+	wl_display_roundtrip(display->wl_display);
 
-	id = wl_display_get_global(display->wl_display, "wl_gdl", 1);
-	if (id == 0) {
+	if (display->wl_gdl == NULL) {
 		dbg("wayland gdl interface is not available");
 		WSEGL_CloseDisplay(display);
 		return WSEGL_CANNOT_INITIALISE;
 	}
 
-	gdl_rc = gdl_init(0);
+	gdl_ret_t gdl_rc = gdl_init(0);
 	if (gdl_rc != GDL_SUCCESS) {
 		dbg("failed gdl init");
 		WSEGL_CloseDisplay(display);
@@ -131,14 +149,6 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 	}
 
 	display->gdl_init = true;
-
-	display->wl_gdl = wl_display_bind(display->wl_display, id,
-					  &wl_gdl_interface);
-	if (!display->wl_gdl) {
-		dbg("cannot bind wayland gdl interface");
-		WSEGL_CloseDisplay(display);
-		return WSEGL_CANNOT_INITIALISE;
-	}
 
 	pvr2d_rc = PVR2DCreateDeviceContext(1, &display->pvr2d_context, 0);
 	if (pvr2d_rc != PVR2D_OK) {
