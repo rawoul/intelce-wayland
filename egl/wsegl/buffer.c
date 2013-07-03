@@ -106,7 +106,7 @@ wayland_bind_gma_buffer(struct wayland_display *display,
 		pvr_rc = PVR2DMemWrap(display->pvr2d_context,
 				      pixmap_info.virt_addr,
 				      PVR2D_WRAPFLAG_NONCONTIGUOUS,
-				      size, IMG_NULL, &meminfo);
+				      size, NULL, &meminfo);
 	}
 
 	if (pvr_rc != PVR2D_OK) {

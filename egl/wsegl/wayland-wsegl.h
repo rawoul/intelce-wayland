@@ -7,8 +7,6 @@
 
 #include <EGL/eglplatform.h>
 #include <wsegl.h>
-#include <img_defs.h>
-#include <services.h>
 #include <pvr2d.h>
 #include <wayland-client.h>
 
@@ -35,7 +33,6 @@ struct wayland_display {
 	struct wl_gdl *wl_gdl;
 	bool gdl_init;
 	PVR2DCONTEXTHANDLE pvr2d_context;
-	PVRSRV_CONNECTION *pvrsrv_connection;
 };
 
 enum wayland_buffer_id {

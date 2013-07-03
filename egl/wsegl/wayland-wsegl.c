@@ -13,15 +13,15 @@
 static WSEGLConfig display_configs[] = {
 	{ WSEGL_DRAWABLE_WINDOW | WSEGL_DRAWABLE_PIXMAP,
 	  WSEGL_PIXELFORMAT_XRGB8888, WSEGL_FALSE, 0,
-	  0, IMG_NULL, WSEGL_OPAQUE, 0 },
+	  0, NULL, WSEGL_OPAQUE, 0 },
 
 	{ WSEGL_DRAWABLE_WINDOW | WSEGL_DRAWABLE_PIXMAP,
 	  WSEGL_PIXELFORMAT_ARGB8888, WSEGL_FALSE, 0,
-	  0, IMG_NULL, WSEGL_OPAQUE, 0 },
+	  0, NULL, WSEGL_OPAQUE, 0 },
 
 	{ WSEGL_DRAWABLE_WINDOW | WSEGL_DRAWABLE_PIXMAP,
 	  WSEGL_PIXELFORMAT_RGB565, WSEGL_FALSE, 0,
-	  0, IMG_NULL, WSEGL_OPAQUE, 0 },
+	  0, NULL, WSEGL_OPAQUE, 0 },
 
 	{ WSEGL_NO_DRAWABLE, 0, 0, 0, 0, 0, 0, 0 }
 };
@@ -85,9 +85,6 @@ WSEGL_CloseDisplay(WSEGLDisplayHandle display_handle)
 	if (display->pvr2d_context)
 		PVR2DDestroyDeviceContext(display->pvr2d_context);
 
-	if (display->pvrsrv_connection)
-		PVRSRVDisconnect(display->pvrsrv_connection);
-
 	if (display->gdl_init)
 		gdl_close();
 
@@ -105,7 +102,6 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 	struct wayland_display *display;
 	gdl_ret_t gdl_rc;
 	PVR2DERROR pvr2d_rc;
-	PVRSRV_ERROR pvrsrv_rc;
 	uint32_t id;
 
 	dbg("initializing Wayland display");
@@ -150,13 +146,6 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 		    pvr2d_strerror(pvr2d_rc));
 		WSEGL_CloseDisplay(display);
 		return WSEGL_OUT_OF_MEMORY;
-	}
-
-	pvrsrv_rc = PVRSRVConnect(&display->pvrsrv_connection, 0);
-	if (pvrsrv_rc != PVRSRV_OK) {
-		dbg("failed to connect pvr services");
-		WSEGL_CloseDisplay(display);
-		return WSEGL_CANNOT_INITIALISE;
 	}
 
 	*caps = display_caps;
@@ -437,8 +426,7 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 	struct wayland_display *display;
 	struct wayland_window *window;
 	struct wayland_buffer *buffer;
-	PVRSRV_CLIENT_MEM_INFO *cmeminfo;
-	PVRSRV_ERROR pvrsrv_rc;
+	PVR2DERROR pvr2d_rc;
 
 	if (drawable->type != WSEGL_DRAWABLE_WINDOW)
 		return WSEGL_SUCCESS;
@@ -447,11 +435,10 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 	window = &drawable->window;
 	buffer = window->buffers[BUFFER_ID_BACK];
 
-	cmeminfo = buffer->meminfo->hPrivateData;
-	pvrsrv_rc = PVRSRVWaitForWriteOpSync(display->pvrsrv_connection,
-					     cmeminfo->psClientSyncInfo);
-	if (pvrsrv_rc != PVRSRV_OK)
-		dbg("failed to flush gfx queue");
+	pvr2d_rc = PVR2DQueryBlitsComplete(display->pvr2d_context,
+					   buffer->meminfo, 1);
+	if (pvr2d_rc != PVR2D_OK)
+		dbg("failed to commit gfx queue");
 
 	while (window->swap_count < window->swap_interval) {
 		dbg("wait for swap to finish");
