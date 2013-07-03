@@ -63,7 +63,6 @@ struct wayland_buffer {
 
 struct wayland_pixmap {
 	struct wayland_buffer *buffer;
-	struct wl_egl_pixmap *egl_pixmap;
 };
 
 struct wayland_window {

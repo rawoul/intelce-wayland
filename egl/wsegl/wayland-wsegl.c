@@ -11,15 +11,15 @@
 #define MAX_SWAP_COUNT	100
 
 static WSEGLConfig display_configs[] = {
-	{ WSEGL_DRAWABLE_WINDOW | WSEGL_DRAWABLE_PIXMAP,
+	{ WSEGL_DRAWABLE_WINDOW,
 	  WSEGL_PIXELFORMAT_XRGB8888, WSEGL_FALSE, 0,
 	  0, NULL, WSEGL_OPAQUE, 0 },
 
-	{ WSEGL_DRAWABLE_WINDOW | WSEGL_DRAWABLE_PIXMAP,
+	{ WSEGL_DRAWABLE_WINDOW,
 	  WSEGL_PIXELFORMAT_ARGB8888, WSEGL_FALSE, 0,
 	  0, NULL, WSEGL_OPAQUE, 0 },
 
-	{ WSEGL_DRAWABLE_WINDOW | WSEGL_DRAWABLE_PIXMAP,
+	{ WSEGL_DRAWABLE_WINDOW,
 	  WSEGL_PIXELFORMAT_RGB565, WSEGL_FALSE, 0,
 	  0, NULL, WSEGL_OPAQUE, 0 },
 
@@ -276,13 +276,6 @@ WSEGL_CreatePixmapDrawable(WSEGLDisplayHandle display_handle,
 			   NativePixmapType native_pixmap,
 			   WSEGLRotationAngle *rotation_angle)
 {
-	struct wayland_display *display =
-		(struct wayland_display *) display_handle;
-	struct wayland_drawable *drawable;
-	const struct wayland_pixel_format *egl_pf;
-	struct wl_egl_pixmap *egl_pixmap;
-	WSEGLError err;
-
 	if (config == NULL) {
 		// config is not set, we are creating an EGL image
 		return WSEGL_CreateImageDrawable(display_handle,
@@ -290,58 +283,7 @@ WSEGL_CreatePixmapDrawable(WSEGLDisplayHandle display_handle,
 						 native_pixmap);
 	}
 
-	if (drawable_handle == NULL || !native_pixmap)
-		return WSEGL_BAD_NATIVE_PIXMAP;
-
-	if (!(config->ui32DrawableType & WSEGL_DRAWABLE_PIXMAP)) {
-		dbg("selected config does not allow pixmap drawables");
-		return WSEGL_BAD_CONFIG;
-	}
-
-	egl_pf = convert_wsegl_pixel_format(config->ePixelFormat);
-	if (!egl_pf) {
-		dbg("invalid config pixel format");
-		return WSEGL_BAD_CONFIG;
-	}
-
-	if (!egl_pf->renderable) {
-		dbg("cannot render to pixel format");
-		return WSEGL_BAD_CONFIG;
-	}
-
-	egl_pixmap = native_pixmap;
-	if (!egl_pixmap) {
-		dbg("null native pixmap handle");
-		return WSEGL_BAD_NATIVE_WINDOW;
-	}
-
-	drawable = calloc(1, sizeof (*drawable));
-	if (!drawable)
-		return WSEGL_OUT_OF_MEMORY;
-
-	err = wayland_alloc_buffer(display,
-				   egl_pixmap->width,
-				   egl_pixmap->height,
-				   egl_pf,
-				   &drawable->pixmap.buffer);
-	if (err != WSEGL_SUCCESS) {
-		free(drawable);
-		return err;
-	}
-
-	drawable->display = display;
-	drawable->type = WSEGL_DRAWABLE_PIXMAP;
-	drawable->width = drawable->pixmap.buffer->width;
-	drawable->height = drawable->pixmap.buffer->height;
-	drawable->format = egl_pf;
-	drawable->pixmap.egl_pixmap = egl_pixmap;
-
-	egl_pixmap->buffer = drawable->pixmap.buffer->wl_buffer;
-
-	*drawable_handle = drawable;
-	*rotation_angle = 0;
-
-	return WSEGL_SUCCESS;
+	return WSEGL_BAD_NATIVE_PIXMAP;
 }
 
 static void
@@ -349,10 +291,7 @@ destroy_drawable_pixmap(struct wayland_drawable *drawable)
 {
 	struct wayland_pixmap *pixmap = &drawable->pixmap;
 
-	if (pixmap->egl_pixmap)
-		wayland_destroy_buffer(drawable->display, pixmap->buffer);
-	else
-		wayland_unbind_buffer(drawable->display, pixmap->buffer);
+	wayland_unbind_buffer(drawable->display, pixmap->buffer);
 }
 
 static void

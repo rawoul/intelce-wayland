@@ -47,31 +47,3 @@ wl_egl_window_get_attached_size(struct wl_egl_window *egl_window,
 	if (height)
 		*height = egl_window->attached_height;
 }
-
-WL_EXPORT struct wl_egl_pixmap *
-wl_egl_pixmap_create(int width, int height, uint32_t flags)
-{
-	struct wl_egl_pixmap *egl_pixmap;
-
-	egl_pixmap = malloc(sizeof (*egl_pixmap));
-	if (!egl_pixmap)
-		return NULL;
-
-	egl_pixmap->width = width;
-	egl_pixmap->height = height;
-	egl_pixmap->flags = flags;
-
-	return egl_pixmap;
-}
-
-WL_EXPORT void
-wl_egl_pixmap_destroy(struct wl_egl_pixmap *egl_pixmap)
-{
-	free(egl_pixmap);
-}
-
-WL_EXPORT struct wl_buffer *
-wl_egl_pixmap_create_buffer(struct wl_egl_pixmap *egl_pixmap)
-{
-	return egl_pixmap->buffer;
-}
