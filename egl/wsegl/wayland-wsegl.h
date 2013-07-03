@@ -31,6 +31,7 @@
 struct wayland_display {
 	struct wl_display *wl_display;
 	struct wl_registry *wl_registry;
+	struct wl_event_queue *wl_queue;
 	struct wl_gdl *wl_gdl;
 	bool gdl_init;
 	PVR2DCONTEXTHANDLE pvr2d_context;

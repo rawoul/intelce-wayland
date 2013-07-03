@@ -53,6 +53,36 @@ pointer_is_dereferencable(void *p)
 	return (valid & 0x01) == 0x01;
 }
 
+static void
+sync_callback(void *data, struct wl_callback *callback, uint32_t serial)
+{
+	int *done = data;
+
+	*done = 1;
+	wl_callback_destroy(callback);
+}
+
+static const struct wl_callback_listener sync_listener = {
+	sync_callback
+};
+
+static int
+wayland_roundtrip(struct wayland_display *display)
+{
+	struct wl_callback *callback;
+	int done, ret;
+
+	callback = wl_display_sync(display->wl_display);
+	wl_callback_add_listener(callback, &sync_listener, &done);
+	wl_proxy_set_queue((struct wl_proxy *) callback, display->wl_queue);
+	do {
+		ret = wl_display_dispatch_queue(display->wl_display,
+						display->wl_queue);
+	} while (ret >= 0 && !done);
+
+	return ret;
+}
+
 static WSEGLError
 WSEGL_IsDisplayValid(NativeDisplayType native_display)
 {
@@ -85,6 +115,9 @@ WSEGL_CloseDisplay(WSEGLDisplayHandle display_handle)
 
 	if (display->wl_registry)
 		wl_registry_destroy(display->wl_registry);
+
+	if (display->wl_queue)
+		wl_event_queue_destroy(display->wl_queue);
 
 	if (display->pvr2d_context)
 		PVR2DDestroyDeviceContext(display->pvr2d_context);
@@ -129,11 +162,14 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 		return WSEGL_OUT_OF_MEMORY;
 
 	display->wl_display = (struct wl_display *) native_display;
+	display->wl_queue = wl_display_create_queue(display->wl_display);
 	display->wl_registry = wl_display_get_registry(display->wl_display);
+	wl_proxy_set_queue((struct wl_proxy *) display->wl_registry,
+			   display->wl_queue);
 	wl_registry_add_listener(display->wl_registry,
 				 &registry_listener, display);
 
-	wl_display_roundtrip(display->wl_display);
+	wayland_roundtrip(display);
 
 	if (display->wl_gdl == NULL) {
 		dbg("wayland gdl interface is not available");
@@ -354,6 +390,8 @@ frame_callback(void *data, struct wl_callback *callback, uint32_t time)
 	};
 
 	struct wayland_window *window = data;
+	struct wayland_drawable *drawable =
+		wl_container_of(window, drawable, window);
 
 	if (callback) {
 		wl_callback_destroy(callback);
@@ -363,6 +401,8 @@ frame_callback(void *data, struct wl_callback *callback, uint32_t time)
 	if (window->swap_count < window->swap_interval) {
 		callback = wl_surface_frame(window->egl_window->surface);
 		wl_callback_add_listener(callback, &frame_listener, window);
+		wl_proxy_set_queue((struct wl_proxy *) callback,
+				   drawable->display->wl_queue);
 	}
 }
 
@@ -390,9 +430,15 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 		dbg("failed to commit gfx queue");
 
 	while (window->swap_count < window->swap_interval) {
+		int ret;
+
 		dbg("wait for swap to finish");
-		wl_display_flush(display->wl_display);
-		wl_display_iterate(display->wl_display, WL_DISPLAY_READABLE);
+		ret = wl_display_dispatch_queue(display->wl_display,
+						display->wl_queue);
+		if (ret < 0) {
+			dbg("failed to wait for swap to finish");
+			return WSEGL_SUCCESS;
+		}
 	}
 
 	window->swap_count = 0;
@@ -510,17 +556,17 @@ window_get_render_buffer(struct wayland_drawable *drawable)
 	struct wayland_window *window = &drawable->window;
 	struct wayland_buffer *buffer;
 
-	/*
-	 * Try to use an already allocated and unlocked buffer.
-	 */
+	/* process queued event, a buffer release might be pending */
+	wl_display_dispatch_queue_pending(display->wl_display,
+					  display->wl_queue);
+
+	/* try to use an already allocated and unlocked buffer */
 	for (int i = 0; i < window->num_buffers; i++) {
 		if (!window->bufferpool[i]->lock)
 			return window->bufferpool[i];
 	}
 
-	/*
-	 * Try to allocate a new buffer.
-	 */
+	/* try to allocate a new buffer */
 	if (window->num_buffers < window->max_buffers) {
 		WSEGLError err;
 
@@ -538,19 +584,22 @@ window_get_render_buffer(struct wayland_drawable *drawable)
 		}
 	}
 
-	/*
-	 * Wait for a buffer to be unlocked.
-	 */
+	/* wait for a buffer to be unlocked */
 	if (window->num_buffers < 2) {
 		dbg("not enough buffers for window");
 		return NULL;
 	}
 
 	dbg("wait for buffer");
-	wl_display_flush(display->wl_display);
 
 	for (buffer = NULL; !buffer; ) {
-		wl_display_iterate(display->wl_display, WL_DISPLAY_READABLE);
+		int ret = wl_display_dispatch_queue(display->wl_display,
+						    display->wl_queue);
+		if (ret < 0) {
+			dbg("failed to wait for buffer");
+			return NULL;
+		}
+
 		for (int i = 0; i < window->num_buffers; i++) {
 			if (!window->bufferpool[i]->lock) {
 				buffer = window->bufferpool[i];
