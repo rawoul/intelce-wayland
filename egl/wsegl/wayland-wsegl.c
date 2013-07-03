@@ -442,7 +442,6 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 	}
 
 	window->swap_count = 0;
-	frame_callback(window, NULL, 0);
 
 	dbg("swap surface=%u w=%d(%d) h=%d",
 	    gma_gdl_pixmap_get_id(buffer->pixmap),
@@ -452,6 +451,10 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 			  buffer->wl_buffer, 0, 0);
 	wl_surface_damage(window->egl_window->surface, 0, 0,
 			  buffer->width, buffer->height);
+
+	frame_callback(window, NULL, 0);
+
+	wl_surface_commit(window->egl_window->surface);
 
 	buffer->lock = 1;
 
