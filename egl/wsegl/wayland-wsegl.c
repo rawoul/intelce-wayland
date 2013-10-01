@@ -75,10 +75,16 @@ wayland_roundtrip(struct wayland_display *display)
 	callback = wl_display_sync(display->wl_display);
 	wl_callback_add_listener(callback, &sync_listener, &done);
 	wl_proxy_set_queue((struct wl_proxy *) callback, display->wl_queue);
+
+	done = 0;
+
 	do {
 		ret = wl_display_dispatch_queue(display->wl_display,
 						display->wl_queue);
 	} while (ret >= 0 && !done);
+
+	if (!done)
+		wl_callback_destroy(callback);
 
 	return ret;
 }
@@ -270,6 +276,9 @@ destroy_drawable_window(struct wayland_drawable *drawable)
 	for (int i = 0; i < BUFFER_ID_MAX; i++)
 		wayland_destroy_buffer(drawable->display,
 				       win->buffers[i]);
+
+	if (win->frame_cb)
+		wl_callback_destroy(win->frame_cb);
 }
 
 static WSEGLError
@@ -398,11 +407,14 @@ frame_callback(void *data, struct wl_callback *callback, uint32_t time)
 		window->swap_count++;
 	}
 
+	window->frame_cb = NULL;
+
 	if (window->swap_count < window->swap_interval) {
 		callback = wl_surface_frame(window->egl_window->surface);
 		wl_callback_add_listener(callback, &frame_listener, window);
 		wl_proxy_set_queue((struct wl_proxy *) callback,
 				   drawable->display->wl_queue);
+		window->frame_cb = callback;
 		wl_surface_commit(window->egl_window->surface);
 	}
 }

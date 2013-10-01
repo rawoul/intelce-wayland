@@ -70,6 +70,7 @@ struct wayland_pixmap {
 struct wayland_window {
 	struct wayland_buffer *buffers[BUFFER_ID_MAX];
 	struct wayland_buffer *bufferpool[BUFFER_COUNT];
+	struct wl_callback *frame_cb;
 	struct wl_egl_window *egl_window;
 	int num_buffers;
 	int max_buffers;
