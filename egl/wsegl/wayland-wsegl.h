@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #include <EGL/eglplatform.h>
 #include <wsegl.h>
@@ -35,6 +36,7 @@ struct wayland_display {
 	struct wl_gdl *wl_gdl;
 	bool gdl_init;
 	PVR2DCONTEXTHANDLE pvr2d_context;
+	pthread_mutex_t pvr2d_lock;
 };
 
 enum wayland_buffer_id {

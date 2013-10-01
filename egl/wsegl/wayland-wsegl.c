@@ -29,6 +29,7 @@ static WSEGLConfig display_configs[] = {
 
 static const WSEGLCaps display_caps[] = {
 	{ WSEGL_CAP_WINDOWS_USE_HW_SYNC, 1 },
+	{ WSEGL_CAP_UNLOCKED, 1 },
 	{ WSEGL_CAP_MIN_SWAP_INTERVAL, 0 },
 	{ WSEGL_CAP_MAX_SWAP_INTERVAL, MAX_SWAP_COUNT },
 	{ WSEGL_NO_CAPS, 0 }
@@ -436,8 +437,10 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 	window = &drawable->window;
 	buffer = window->buffers[BUFFER_ID_BACK];
 
+	pthread_mutex_lock(&display->pvr2d_lock);
 	pvr2d_rc = PVR2DQueryBlitsComplete(display->pvr2d_context,
 					   buffer->meminfo, 1);
+	pthread_mutex_unlock(&display->pvr2d_lock);
 	if (pvr2d_rc != PVR2D_OK)
 		dbg("failed to commit gfx queue");
 
