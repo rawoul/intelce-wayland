@@ -273,9 +273,8 @@ destroy_drawable_window(struct wayland_drawable *drawable)
 {
 	struct wayland_window *win = &drawable->window;
 
-	for (int i = 0; i < BUFFER_ID_MAX; i++)
-		wayland_destroy_buffer(drawable->display,
-				       win->buffers[i]);
+	for (int i = 0; i < win->num_buffers; i++)
+		wayland_destroy_buffer(drawable->display, win->bufferpool[i]);
 
 	if (win->frame_cb)
 		wl_callback_destroy(win->frame_cb);
