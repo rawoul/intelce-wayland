@@ -403,6 +403,7 @@ frame_callback(void *data, struct wl_callback *callback, uint32_t time)
 		wl_callback_add_listener(callback, &frame_listener, window);
 		wl_proxy_set_queue((struct wl_proxy *) callback,
 				   drawable->display->wl_queue);
+		wl_surface_commit(window->egl_window->surface);
 	}
 }
 
@@ -453,8 +454,6 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 			  buffer->width, buffer->height);
 
 	frame_callback(window, NULL, 0);
-
-	wl_surface_commit(window->egl_window->surface);
 
 	buffer->lock = 1;
 
