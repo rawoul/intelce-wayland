@@ -27,7 +27,7 @@
 #endif
 # define err(fmt, ...)	fprintf(stderr, "EGL/wayland: "fmt"\n", ##__VA_ARGS__)
 
-#define BUFFER_COUNT	2
+#define BUFFER_COUNT	3
 
 struct wayland_display {
 	struct wl_display *wl_display;
