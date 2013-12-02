@@ -119,8 +119,8 @@ WSEGL_CloseDisplay(WSEGLDisplayHandle display_handle)
 	if (display->wl_gdl)
 		wl_gdl_destroy(display->wl_gdl);
 
-	if (display->wl_registry)
-		wl_registry_destroy(display->wl_registry);
+	if (display->wl_shm)
+		wl_shm_destroy(display->wl_shm);
 
 	if (display->wl_queue)
 		wl_event_queue_destroy(display->wl_queue);
@@ -136,15 +136,25 @@ WSEGL_CloseDisplay(WSEGLDisplayHandle display_handle)
 	return WSEGL_SUCCESS;
 }
 
+struct wayland_globals {
+	uint32_t wl_gdl_id;
+	uint32_t wl_gdl_version;
+	uint32_t wl_shm_id;
+	uint32_t wl_shm_version;
+};
+
 static void
 registry_handle_global(void *data, struct wl_registry *registry,
 		       uint32_t id, const char *interface, uint32_t version)
 {
-	struct wayland_display *display = data;
+	struct wayland_globals *globals = data;
 
 	if (!strcmp(interface, "wl_gdl")) {
-		display->wl_gdl = wl_registry_bind(registry, id,
-						   &wl_gdl_interface, 1);
+		globals->wl_gdl_id = id;
+		globals->wl_gdl_version = version;
+	} else if (!strcmp(interface, "wl_shm")) {
+		globals->wl_shm_id = id;
+		globals->wl_shm_version = version;
 	}
 }
 
@@ -159,6 +169,9 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 			WSEGLConfig **configs)
 {
 	struct wayland_display *display;
+	struct wayland_globals globals;
+	struct wl_registry *registry;
+	bool use_sw;
 	PVR2DERROR pvr2d_rc;
 
 	dbg("initializing Wayland display");
@@ -169,28 +182,38 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 
 	display->wl_display = (struct wl_display *) native_display;
 	display->wl_queue = wl_display_create_queue(display->wl_display);
-	display->wl_registry = wl_display_get_registry(display->wl_display);
-	wl_proxy_set_queue((struct wl_proxy *) display->wl_registry,
-			   display->wl_queue);
-	wl_registry_add_listener(display->wl_registry,
-				 &registry_listener, display);
 
+	memset(&globals, 0, sizeof (globals));
+	registry = wl_display_get_registry(display->wl_display);
+	wl_proxy_set_queue((struct wl_proxy *) registry, display->wl_queue);
+	wl_registry_add_listener(registry, &registry_listener, &globals);
 	wayland_roundtrip(display);
 
-	if (display->wl_gdl == NULL) {
-		dbg("wayland gdl interface is not available");
+	use_sw = !globals.wl_gdl_version;
+	if (use_sw && !globals.wl_shm_version) {
 		WSEGL_CloseDisplay(display);
 		return WSEGL_CANNOT_INITIALISE;
 	}
 
-	gdl_ret_t gdl_rc = gdl_init(0);
-	if (gdl_rc != GDL_SUCCESS) {
-		dbg("failed gdl init");
-		WSEGL_CloseDisplay(display);
-		return WSEGL_CANNOT_INITIALISE;
+	if (use_sw) {
+		dbg("allocating buffers using SHM");
+		display->wl_shm = wl_registry_bind(registry, globals.wl_shm_id,
+						   &wl_shm_interface, 1);
+	} else {
+		if (gdl_init(0) != GDL_SUCCESS) {
+			dbg("failed gdl init");
+			WSEGL_CloseDisplay(display);
+			return WSEGL_CANNOT_INITIALISE;
+		}
+
+		display->gdl_init = true;
+
+		dbg("allocating buffers using GDL");
+		display->wl_gdl = wl_registry_bind(registry, globals.wl_gdl_id,
+						   &wl_gdl_interface, 1);
 	}
 
-	display->gdl_init = true;
+	wl_registry_destroy(registry);
 
 	pvr2d_rc = PVR2DCreateDeviceContext(1, &display->pvr2d_context, 0);
 	if (pvr2d_rc != PVR2D_OK) {

@@ -31,9 +31,9 @@
 
 struct wayland_display {
 	struct wl_display *wl_display;
-	struct wl_registry *wl_registry;
 	struct wl_event_queue *wl_queue;
 	struct wl_gdl *wl_gdl;
+	struct wl_shm *wl_shm;
 	bool gdl_init;
 	PVR2DCONTEXTHANDLE pvr2d_context;
 	pthread_mutex_t pvr2d_lock;
@@ -46,8 +46,10 @@ enum wayland_buffer_id {
 };
 
 struct wayland_pixel_format {
+	const char *name;
 	gdl_pixel_format_t gdl_pf;
 	gma_pixel_format_t gma_pf;
+	enum wl_shm_format wl_pf;
 	WSEGLPixelFormat wsegl_pf;
 	int bpp;
 	bool has_alpha;
@@ -92,6 +94,11 @@ struct wayland_drawable {
 		struct wayland_pixmap pixmap;
 	};
 };
+
+static inline int align(int value, int alignment)
+{
+	return (value + alignment - 1) & ~(alignment - 1);
+}
 
 const char *pvr2d_strerror(PVR2DERROR err);
 uint64_t get_time_ms(void);

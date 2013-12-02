@@ -1,8 +1,84 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 #include "wayland-wsegl.h"
+
+static gma_ret_t
+pixmap_destroy_shm(gma_pixmap_info_t *pixmap_info)
+{
+	int fd;
+	gma_ret_t ret = GMA_SUCCESS;
+
+	munmap(pixmap_info->virt_addr,
+	       pixmap_info->height * pixmap_info->pitch);
+
+	fd = (int)pixmap_info->user_data;
+	if (close(fd) < 0)
+		ret = GMA_ERR_FAILED;
+
+	return ret;
+}
+
+static WSEGLError
+create_shm_pixmap(int width, int height,
+		  const struct wayland_pixel_format *format,
+		  gma_pixmap_t *pixmap, gma_pixmap_info_t *pixmap_info)
+{
+	gma_pixmap_info_t info;
+	gma_pixmap_funcs_t funcs;
+	char filename[] = "/tmp/wayland-shm-XXXXXX";
+	void *data;
+	int stride;
+	int size;
+	int fd;
+
+	fd = mkstemp(filename);
+	if (fd < 0) {
+		dbg("failed to create file for SHM buffer: %m");
+		return WSEGL_OUT_OF_MEMORY;
+	}
+
+	unlink(filename);
+
+	stride = align(width * format->bpp, format->bpp * 2);
+	size = height * stride;
+
+	if (fallocate(fd, 0, 0, size) < 0) {
+		dbg("failed to allocate %d bytes for SHM buffer: %m", size);
+		close(fd);
+		return WSEGL_OUT_OF_MEMORY;
+	}
+
+	data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (data == MAP_FAILED) {
+		dbg("failed to map SHM buffer data: %m");
+		close(fd);
+		return WSEGL_OUT_OF_MEMORY;
+	}
+
+	info.type = GMA_PIXMAP_TYPE_VIRTUAL;
+	info.virt_addr = data;
+	info.phys_addr = 0;
+	info.width = width;
+	info.height = height;
+	info.pitch = stride;
+	info.format = format->gma_pf;
+	info.user_data = (void *)fd;
+
+	funcs.destroy = pixmap_destroy_shm;
+
+	if (gma_pixmap_alloc(&info, &funcs, pixmap) != GMA_SUCCESS) {
+		dbg("failed to allocate SHM pixmap");
+		pixmap_destroy_shm(&info);
+	}
+
+	*pixmap_info = info;
+
+	return WSEGL_SUCCESS;
+}
 
 static gma_ret_t
 pixmap_destroy_gdl(gma_pixmap_info_t *pixmap_info)
@@ -85,7 +161,11 @@ wayland_alloc_buffer(struct wayland_display *display, int width, int height,
 		return WSEGL_OUT_OF_MEMORY;
 	}
 
-	err = create_gdl_pixmap(width, height, format, &pixmap, &pi);
+	if (display->wl_gdl)
+		err = create_gdl_pixmap(width, height, format, &pixmap, &pi);
+	else
+		err = create_shm_pixmap(width, height, format, &pixmap, &pi);
+
 	if (err != WSEGL_SUCCESS) {
 		free(buffer);
 		return WSEGL_OUT_OF_MEMORY;
@@ -98,8 +178,24 @@ wayland_alloc_buffer(struct wayland_display *display, int width, int height,
 		return err;
 	}
 
-	buffer->id = (gdl_surface_id_t)pi.user_data;
-	buffer->wl_buffer = wl_gdl_create_buffer(display->wl_gdl, buffer->id);
+	if (display->wl_gdl) {
+		buffer->id = (gdl_surface_id_t)pi.user_data;
+		buffer->wl_buffer =
+			wl_gdl_create_buffer(display->wl_gdl, buffer->id);
+	} else {
+		struct wl_shm_pool *pool;
+
+		buffer->id = (int)pi.user_data;
+		pool = wl_shm_create_pool(display->wl_shm, buffer->id,
+					  pi.pitch * pi.height);
+
+		buffer->wl_buffer =
+			wl_shm_pool_create_buffer(pool, 0,
+						  pi.width, pi.height,
+						  pi.pitch, format->wl_pf);
+
+		wl_shm_pool_destroy(pool);
+	}
 
 	if (!buffer->wl_buffer) {
 		wayland_destroy_buffer(display, buffer);
