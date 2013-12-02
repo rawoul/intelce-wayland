@@ -80,7 +80,7 @@ bind_gdl(struct wl_client *client, void *data, uint32_t version, uint32_t id)
 int
 wl_display_init_gdl(struct wl_display *display)
 {
-	if (!wl_display_add_global(display, &wl_gdl_interface, NULL, bind_gdl))
+	if (!wl_global_create(display, &wl_gdl_interface, 1, NULL, bind_gdl))
 		return -1;
 
 	return 0;
