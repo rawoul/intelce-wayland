@@ -176,6 +176,8 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 
 	dbg("initializing Wayland display");
 
+	use_sw = debug_get_bool_option("EGL_SOFTWARE", false);
+
 	display = calloc(1, sizeof (*display));
 	if (!display)
 		return WSEGL_OUT_OF_MEMORY;
@@ -189,7 +191,9 @@ WSEGL_InitialiseDisplay(NativeDisplayType native_display,
 	wl_registry_add_listener(registry, &registry_listener, &globals);
 	wayland_roundtrip(display);
 
-	use_sw = !globals.wl_gdl_version;
+	if (!use_sw && !globals.wl_gdl_version)
+		use_sw = true;
+
 	if (use_sw && !globals.wl_shm_version) {
 		WSEGL_CloseDisplay(display);
 		return WSEGL_CANNOT_INITIALISE;

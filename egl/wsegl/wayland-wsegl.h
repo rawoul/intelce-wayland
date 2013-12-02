@@ -100,6 +100,7 @@ static inline int align(int value, int alignment)
 	return (value + alignment - 1) & ~(alignment - 1);
 }
 
+bool debug_get_bool_option(const char *name, bool dfault);
 const char *pvr2d_strerror(PVR2DERROR err);
 uint64_t get_time_ms(void);
 

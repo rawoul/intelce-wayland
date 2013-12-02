@@ -1,3 +1,5 @@
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <sys/time.h>
 
@@ -9,6 +11,30 @@ get_time_ms(void)
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+bool
+debug_get_bool_option(const char *name, bool dfault)
+{
+	const char *str = getenv(name);
+	bool result;
+
+	if (str == NULL)
+		result = dfault;
+	else if (!strcasecmp(str, "n"))
+		result = false;
+	else if (!strcasecmp(str, "no"))
+		result = false;
+	else if (!strcmp(str, "0"))
+		result = false;
+	else if (!strcasecmp(str, "f"))
+		result = false;
+	else if (!strcasecmp(str, "false"))
+		result = false;
+	else
+		result = true;
+
+	return result;
 }
 
 const char *
