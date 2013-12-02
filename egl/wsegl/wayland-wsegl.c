@@ -8,8 +8,6 @@
 
 #include "wayland-wsegl.h"
 
-#define MAX_SWAP_COUNT	100
-
 static WSEGLConfig display_configs[] = {
 	{ WSEGL_DRAWABLE_WINDOW,
 	  WSEGL_PIXELFORMAT_XRGB8888, WSEGL_FALSE, 0,
@@ -30,7 +28,7 @@ static const WSEGLCaps display_caps[] = {
 	{ WSEGL_CAP_WINDOWS_USE_HW_SYNC, 1 },
 	{ WSEGL_CAP_UNLOCKED, 1 },
 	{ WSEGL_CAP_MIN_SWAP_INTERVAL, 0 },
-	{ WSEGL_CAP_MAX_SWAP_INTERVAL, MAX_SWAP_COUNT },
+	{ WSEGL_CAP_MAX_SWAP_INTERVAL, 1 },
 	{ WSEGL_NO_CAPS, 0 }
 };
 
@@ -287,7 +285,6 @@ WSEGL_CreateWindowDrawable(WSEGLDisplayHandle display_handle,
 	drawable->window.num_buffers = 0;
 	drawable->window.max_buffers = BUFFER_COUNT;
 	drawable->window.swap_interval = 1;
-	drawable->window.swap_count = MAX_SWAP_COUNT;
 
 	*drawable_handle = (WSEGLDrawableHandle) drawable;
 	*rotation_angle = 0;
@@ -303,8 +300,8 @@ destroy_drawable_window(struct wayland_drawable *drawable)
 	for (int i = 0; i < win->num_buffers; i++)
 		wayland_destroy_buffer(drawable->display, win->bufferpool[i]);
 
-	if (win->frame_cb)
-		wl_callback_destroy(win->frame_cb);
+	if (win->throttle_cb)
+		wl_callback_destroy(win->throttle_cb);
 }
 
 static WSEGLError
@@ -418,32 +415,17 @@ _swap_pointers(const void **p1, const void **p2)
 	_swap_pointers((const void **) p1, (const void **) p2)
 
 static void
-frame_callback(void *data, struct wl_callback *callback, uint32_t time)
+throttle_callback(void *data, struct wl_callback *callback, uint32_t time)
 {
-	static const struct wl_callback_listener frame_listener = {
-		frame_callback
-	};
-
 	struct wayland_window *window = data;
-	struct wayland_drawable *drawable =
-		wl_container_of(window, drawable, window);
 
-	if (callback) {
-		wl_callback_destroy(callback);
-		window->swap_count++;
-	}
-
-	window->frame_cb = NULL;
-
-	if (window->swap_count < window->swap_interval) {
-		callback = wl_surface_frame(window->egl_window->surface);
-		wl_callback_add_listener(callback, &frame_listener, window);
-		wl_proxy_set_queue((struct wl_proxy *) callback,
-				   drawable->display->wl_queue);
-		window->frame_cb = callback;
-		wl_surface_commit(window->egl_window->surface);
-	}
+	window->throttle_cb = NULL;
+	wl_callback_destroy(callback);
 }
+
+static const struct wl_callback_listener throttle_listener = {
+	throttle_callback
+};
 
 static WSEGLError
 WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
@@ -454,6 +436,7 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 	struct wayland_display *display;
 	struct wayland_window *window;
 	struct wayland_buffer *buffer;
+	struct wl_callback *callback;
 	PVR2DERROR pvr2d_rc;
 
 	if (drawable->type != WSEGL_DRAWABLE_WINDOW)
@@ -470,7 +453,7 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 	if (pvr2d_rc != PVR2D_OK)
 		dbg("failed to commit gfx queue");
 
-	while (window->swap_count < window->swap_interval) {
+	while (window->throttle_cb) {
 		int ret;
 
 		dbg("wait for swap to finish");
@@ -482,23 +465,37 @@ WSEGL_SwapDrawable(WSEGLDrawableHandle drawable_handle,
 		}
 	}
 
-	window->swap_count = 0;
-
-	dbg("swap surface=%u w=%d(%d) h=%d",
-	    gma_gdl_pixmap_get_id(buffer->pixmap),
-	    buffer->width, buffer->pitch, buffer->height);
+	dbg("swap surface=%d w=%d(%d) h=%d format=%s", buffer->id,
+	    buffer->width, buffer->pitch, buffer->height,
+	    buffer->format->name);
 
 	wl_surface_attach(window->egl_window->surface,
 			  buffer->wl_buffer, 0, 0);
 	wl_surface_damage(window->egl_window->surface, 0, 0,
 			  buffer->width, buffer->height);
 
-	frame_callback(window, NULL, 0);
+	if (window->swap_interval > 0) {
+		callback = wl_surface_frame(window->egl_window->surface);
+		wl_callback_add_listener(callback, &throttle_listener, window);
+		wl_proxy_set_queue((struct wl_proxy *) callback,
+				   display->wl_queue);
+		window->throttle_cb = callback;
+	}
+
+	wl_surface_commit(window->egl_window->surface);
 
 	buffer->lock = 1;
 
 	swap_pointers(&window->buffers[BUFFER_ID_FRONT],
 		      &window->buffers[BUFFER_ID_BACK]);
+
+	if (!window->throttle_cb) {
+		callback = wl_display_sync(display->wl_display);
+		wl_callback_add_listener(callback, &throttle_listener, window);
+		wl_proxy_set_queue((struct wl_proxy *) callback,
+				   display->wl_queue);
+		window->throttle_cb = callback;
+	}
 
 	return WSEGL_SUCCESS;
 }
@@ -626,7 +623,11 @@ window_get_render_buffer(struct wayland_drawable *drawable)
 		}
 	}
 
-	/* wait for a buffer to be unlocked */
+	/* wait for a buffer to be unlocked; this should not happen
+	 * since there can be four buffers to handle the worst case
+	 * scenario, when the window back buffer is used as scanout
+	 * and the swap interval is 0.
+	 */
 	if (window->num_buffers < 2) {
 		dbg("not enough buffers for window");
 		return NULL;

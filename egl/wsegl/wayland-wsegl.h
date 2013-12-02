@@ -27,7 +27,7 @@
 #endif
 # define err(fmt, ...)	fprintf(stderr, "EGL/wayland: "fmt"\n", ##__VA_ARGS__)
 
-#define BUFFER_COUNT	3
+#define BUFFER_COUNT	4
 
 struct wayland_display {
 	struct wl_display *wl_display;
@@ -75,12 +75,11 @@ struct wayland_pixmap {
 struct wayland_window {
 	struct wayland_buffer *buffers[BUFFER_ID_MAX];
 	struct wayland_buffer *bufferpool[BUFFER_COUNT];
-	struct wl_callback *frame_cb;
+	struct wl_callback *throttle_cb;
 	struct wl_egl_window *egl_window;
 	int num_buffers;
 	int max_buffers;
 	int swap_interval;
-	int swap_count;
 };
 
 struct wayland_drawable {
