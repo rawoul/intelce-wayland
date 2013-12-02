@@ -41,13 +41,18 @@ create_buffer(struct wl_client *client, struct wl_resource *resource,
 
 	if (gdl_get_surface_info(name, &buffer->surface_info) != GDL_SUCCESS) {
 		wl_resource_post_error(resource, WL_GDL_ERROR_INVALID_NAME,
-				       "invalid surface id");
+				       "invalid surface id %u", name);
 		free(buffer);
 		return;
 	}
 
 	buffer->resource =
 		wl_resource_create(client, &wl_buffer_interface, 1, id);
+	if (buffer->resource == NULL) {
+		wl_resource_post_no_memory(resource);
+		free(buffer);
+		return;
+	}
 
 	wl_resource_set_implementation(buffer->resource,
 				       &gdl_buffer_interface,
