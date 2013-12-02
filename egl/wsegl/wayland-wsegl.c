@@ -6,7 +6,6 @@
 
 #include <EGL/egl.h>
 
-#include "pixmap.h"
 #include "wayland-wsegl.h"
 
 #define MAX_SWAP_COUNT	100
@@ -556,7 +555,7 @@ buffer_release(void *data, struct wl_buffer *wl_buffer)
 {
 	struct wayland_buffer *buffer = data;
 
-	dbg("release buffer %d", gma_gdl_pixmap_get_id(buffer->pixmap));
+	dbg("release buffer %d", buffer->id);
 
 	buffer->lock = false;
 }
@@ -655,7 +654,7 @@ WSEGL_GetDrawableParameters(WSEGLDrawableHandle drawable_handle,
 		if (!sbuffer)
 			sbuffer = rbuffer;
 
-		dbg("render to %u", gma_gdl_pixmap_get_id(rbuffer->pixmap));
+		dbg("render to %d", rbuffer->id);
 
 		window->buffers[BUFFER_ID_BACK] = rbuffer;
 		window->egl_window->attached_width = drawable->width;

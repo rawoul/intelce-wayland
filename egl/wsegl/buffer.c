@@ -2,8 +2,72 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "pixmap.h"
 #include "wayland-wsegl.h"
+
+static gma_ret_t
+pixmap_destroy_gdl(gma_pixmap_info_t *pixmap_info)
+{
+	gdl_surface_id_t id;
+	gdl_ret_t rc;
+	gma_ret_t ret = GMA_SUCCESS;
+
+	id = (gdl_surface_id_t)pixmap_info->user_data;
+	rc = gdl_unmap_surface(id);
+	if (rc != GDL_SUCCESS)
+		ret = GMA_ERR_FAILED;
+
+	rc = gdl_free_surface(id);
+	if (rc != GDL_SUCCESS)
+		ret = GMA_ERR_FAILED;
+
+	return ret;
+}
+
+static WSEGLError
+create_gdl_pixmap(int width, int height,
+		  const struct wayland_pixel_format *format,
+		  gma_pixmap_t *pixmap, gma_pixmap_info_t *pixmap_info)
+{
+	gma_pixmap_info_t info;
+	gma_pixmap_funcs_t funcs;
+	gdl_surface_info_t surface_info;
+	gdl_uint8 *data;
+	gdl_ret_t rc;
+
+	rc = gdl_alloc_surface(format->gdl_pf, width, height, 0, &surface_info);
+	if (rc != GDL_SUCCESS) {
+		dbg("failed to allocate %dx%d %s GDL surface: %s",
+		    width, height, format->name, gdl_get_error_string(rc));
+		return WSEGL_OUT_OF_MEMORY;
+	}
+
+	rc = gdl_map_surface(surface_info.id, &data, NULL);
+	if (rc != GDL_SUCCESS) {
+		dbg("failed to map GDL surface: %s", gdl_get_error_string(rc));
+		gdl_free_surface(surface_info.id);
+		return WSEGL_OUT_OF_MEMORY;
+	}
+
+	info.type = GMA_PIXMAP_TYPE_PHYSICAL;
+	info.virt_addr = data;
+	info.phys_addr = surface_info.phys_addr;
+	info.width = surface_info.width;
+	info.height = surface_info.height;
+	info.pitch = surface_info.pitch;
+	info.format = format->gma_pf;
+	info.user_data = (void *)surface_info.id;
+
+	funcs.destroy = pixmap_destroy_gdl;
+
+	if (gma_pixmap_alloc(&info, &funcs, pixmap) != GMA_SUCCESS) {
+		dbg("failed to allocate GMA pixmap");
+		pixmap_destroy_gdl(&info);
+	}
+
+	*pixmap_info = info;
+
+	return WSEGL_SUCCESS;
+}
 
 WSEGLError
 wayland_alloc_buffer(struct wayland_display *display, int width, int height,
@@ -12,7 +76,7 @@ wayland_alloc_buffer(struct wayland_display *display, int width, int height,
 {
 	struct wayland_buffer *buffer;
 	gma_pixmap_t pixmap;
-	gma_ret_t rc;
+	gma_pixmap_info_t pi;
 	WSEGLError err;
 
 	buffer = calloc(1, sizeof (*buffer));
@@ -21,9 +85,8 @@ wayland_alloc_buffer(struct wayland_display *display, int width, int height,
 		return WSEGL_OUT_OF_MEMORY;
 	}
 
-	rc = gma_gdl_pixmap_create(width, height, format->gma_pf, &pixmap);
-	if (rc != GMA_SUCCESS) {
-		dbg("failed to create %dx%d gdl buffer", width, height);
+	err = create_gdl_pixmap(width, height, format, &pixmap, &pi);
+	if (err != WSEGL_SUCCESS) {
 		free(buffer);
 		return WSEGL_OUT_OF_MEMORY;
 	}
@@ -35,8 +98,9 @@ wayland_alloc_buffer(struct wayland_display *display, int width, int height,
 		return err;
 	}
 
-	buffer->wl_buffer = wl_gdl_create_buffer(display->wl_gdl,
-						 gma_gdl_pixmap_get_id(pixmap));
+	buffer->id = (gdl_surface_id_t)pi.user_data;
+	buffer->wl_buffer = wl_gdl_create_buffer(display->wl_gdl, buffer->id);
+
 	if (!buffer->wl_buffer) {
 		wayland_destroy_buffer(display, buffer);
 		return WSEGL_OUT_OF_MEMORY;
@@ -117,6 +181,7 @@ wayland_bind_gma_buffer(struct wayland_display *display,
 
 	gma_pixmap_add_ref(pixmap);
 
+	buffer->id = -1;
 	buffer->width = pixmap_info.width;
 	buffer->height = pixmap_info.height;
 	buffer->pitch = pixmap_info.pitch;

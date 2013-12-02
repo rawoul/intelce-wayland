@@ -55,6 +55,7 @@ struct wayland_pixel_format {
 };
 
 struct wayland_buffer {
+	int id;
 	int width;
 	int height;
 	int pitch;
